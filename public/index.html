@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8" />
+<title>Teste - Balanca ao vivo</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #111; color: #eee; padding: 2rem; }
+  #peso { font-size: 4rem; font-weight: bold; }
+  #status { margin-bottom: 1rem; }
+  .ok { color: #4caf50; }
+  .erro { color: #f44336; }
+  #log { margin-top: 2rem; background: #000; padding: 1rem; height: 200px; overflow-y: auto; font-family: monospace; font-size: 0.85rem; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+  <div id="status">conectando...</div>
+  <div id="peso">-- kg</div>
+
+  <input id="apiKey" type="text" placeholder="API key (so se tiver PRINT_API_KEY no .env)" style="width: 320px;" />
+  <button id="btnImprimir">Testar impressora</button>
+  <button id="btnSimularPeso">Simular peso</button>
+  <span id="statusImpressora"></span>
+
+  <div id="log"></div>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const pesoEl = document.getElementById('peso');
+    const logEl = document.getElementById('log');
+
+    function log(linha) {
+      logEl.textContent += linha + '\n';
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    let ultimoPeso = null; // guarda a ultima leitura (real ou simulada), so pra mostrar na tela rapido
+
+    // Reconecta sozinho se a conexao cair (reinicio do servidor, rede
+    // instavel, etc) -- sem isso a pagina ficava presa em "desconectado"
+    // pra sempre ate dar F5 manual.
+    let ws;
+    function conectarWs() {
+      ws = new WebSocket(`ws://${location.host}`);
+      ws.onopen = () => { statusEl.textContent = 'WebSocket conectado, aguardando balanca...'; };
+      ws.onclose = () => {
+        statusEl.textContent = 'WebSocket desconectado, tentando de novo em 3s...';
+        statusEl.className = 'erro';
+        setTimeout(conectarWs, 3000);
+      };
+      ws.onmessage = (event) => processarMensagem(JSON.parse(event.data));
+    }
+
+    function processarMensagem(msg) {
+      if (msg.type === 'status') {
+        statusEl.textContent = msg.conectado
+          ? `Balanca conectada (${msg.porta})`
+          : `Balanca desconectada${msg.erro ? ': ' + msg.erro : ''}`;
+        statusEl.className = msg.conectado ? 'ok' : 'erro';
+      }
+
+      if (msg.type === 'peso') {
+        ultimoPeso = msg;
+        pesoEl.textContent = `${msg.peso.toFixed(3)} ${msg.unidade}` + (msg.estavel === false ? ' (instavel)' : '');
+      }
+
+      if (msg.type === 'linha') {
+        log(msg.raw);
+      }
+    }
+
+    conectarWs();
+
+    const btnImprimir = document.getElementById('btnImprimir');
+    const statusImpressoraEl = document.getElementById('statusImpressora');
+    const apiKeyEl = document.getElementById('apiKey');
+
+    apiKeyEl.value = localStorage.getItem('printApiKey') || '';
+    apiKeyEl.addEventListener('change', () => localStorage.setItem('printApiKey', apiKeyEl.value));
+
+    btnImprimir.addEventListener('click', async () => {
+      btnImprimir.disabled = true;
+      statusImpressoraEl.textContent = 'imprimindo...';
+      statusImpressoraEl.className = '';
+
+      try {
+        const html = await fetch('/etiqueta-teste.html').then((r) => r.text());
+
+        // Busca o peso direto do servidor via HTTP (GET /peso) em vez de
+        // depender do WebSocket -- assim funciona mesmo se o WS estiver
+        // desconectado ou atrasado, sempre pega o valor real e atual.
+        const pesoAtual = await fetch('/peso').then((r) => r.json());
+        const corpo = { html, larguraMm: 100, alturaMm: 50 };
+        if (pesoAtual.peso !== null && pesoAtual.peso !== undefined) {
+          corpo.peso = pesoAtual.peso;
+          corpo.unidade = pesoAtual.unidade;
+        }
+
+        const resp = await fetch('/imprimir/etiqueta/html', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKeyEl.value },
+          body: JSON.stringify(corpo),
+        });
+        const dados = await resp.json();
+
+        if (resp.ok && dados.ok) {
+          statusImpressoraEl.textContent = 'impresso!';
+          statusImpressoraEl.className = 'ok';
+        } else {
+          statusImpressoraEl.textContent = 'erro: ' + (dados.erro || resp.statusText);
+          statusImpressoraEl.className = 'erro';
+        }
+      } catch (err) {
+        statusImpressoraEl.textContent = 'erro: ' + err.message;
+        statusImpressoraEl.className = 'erro';
+      } finally {
+        btnImprimir.disabled = false;
+      }
+    });
+
+    const btnSimularPeso = document.getElementById('btnSimularPeso');
+
+    // Chama o backend (nao so atualiza a tela local): assim o valor fica
+    // registrado no servidor -- aparece em GET /peso, e qualquer impressao
+    // via /imprimir/etiqueta/html (daqui, do Postman ou do site) pega ele sozinha.
+    // Atualiza a tela com a propria resposta (nao espera o WS broadcast
+    // voltar -- funciona mesmo se o WebSocket estiver desconectado).
+    btnSimularPeso.addEventListener('click', async () => {
+      btnSimularPeso.disabled = true;
+      try {
+        const resp = await fetch('/peso/simular', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKeyEl.value },
+          body: JSON.stringify({}),
+        });
+        const dados = await resp.json();
+        if (!resp.ok) throw new Error(dados.erro || resp.statusText);
+        processarMensagem(dados);
+      } catch (err) {
+        statusEl.textContent = 'erro ao simular peso: ' + err.message;
+        statusEl.className = 'erro';
+      } finally {
+        btnSimularPeso.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
