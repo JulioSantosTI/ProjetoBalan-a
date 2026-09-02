@@ -17,6 +17,10 @@
   <div id="peso">-- kg</div>
 
   <input id="apiKey" type="text" placeholder="API key (so se tiver PRINT_API_KEY no .env)" style="width: 320px;" />
+  <div id="impressoraEscolha" style="margin: 0.75rem 0;">
+    <label><input type="radio" name="impressora" value="etiqueta" checked /> Etiqueta</label>
+    <label style="margin-left: 1rem;"><input type="radio" name="impressora" value="cupom" /> Cupom</label>
+  </div>
   <button id="btnImprimir">Testar impressora</button>
   <button id="btnSimularPeso">Simular peso</button>
   <span id="statusImpressora"></span>
@@ -77,6 +81,10 @@
     apiKeyEl.value = localStorage.getItem('printApiKey') || '';
     apiKeyEl.addEventListener('change', () => localStorage.setItem('printApiKey', apiKeyEl.value));
 
+    function impressoraEscolhida() {
+      return document.querySelector('input[name="impressora"]:checked').value;
+    }
+
     btnImprimir.addEventListener('click', async () => {
       btnImprimir.disabled = true;
       statusImpressoraEl.textContent = 'imprimindo...';
@@ -95,7 +103,11 @@
           corpo.unidade = pesoAtual.unidade;
         }
 
-        const resp = await fetch('/imprimir/etiqueta/html', {
+        // Escolhe a rota (e portanto a impressora fisica: etiqueta ou
+        // cupom) de acordo com o radio marcado na tela.
+        const rota = impressoraEscolhida() === 'cupom' ? '/imprimir/cupom/html' : '/imprimir/etiqueta/html';
+
+        const resp = await fetch(rota, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKeyEl.value },
           body: JSON.stringify(corpo),
