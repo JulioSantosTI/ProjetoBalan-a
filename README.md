@@ -4,6 +4,29 @@ Servidor Node.js que le a balanca atraves do adaptador Irxon (Bluetooth SPP,
 aparece como porta COM virtual no Windows) e retransmite as leituras em tempo
 real por WebSocket na porta 3000, para um site consumir.
 
+## App Agente WMS (instalador .exe)
+
+O agente roda como um aplicativo Windows (Electron): fica na bandeja perto do
+relogio, inicia com o Windows e tem uma janela de configuracao protegida por
+senha (impressoras de Etiqueta/Cupom, balanca, porta, teste de impressao).
+A configuracao fica em `C:\ProgramData\AgenteWMS\config.json`, ou seja, e da
+maquina, nao do usuario logado no WMS.
+
+**Senha:** cada maquina tem a sua, definida na instalacao (pagina "Senha do
+Agente WMS", com confirmar e mostrar senha -- `build/installer.nsh`). Fica so
+o hash em `C:\ProgramData\AgenteWMS\senha.json`, gravado como administrador:
+usuarios comuns nao conseguem apagar nem trocar. Esqueceu a senha? Reinstale
+o agente e defina outra. Instalacao silenciosa (`/S`) mantem a senha atual.
+
+- Abrir o app em desenvolvimento: `npm run app` (sem senha definida, a janela
+  avisa; para testar: `set CONFIG_DIR=...` e
+  `set AGENTE_WMS_NOVA_SENHA=... && npx electron . --definir-senha`)
+- Gerar o instalador: `npm run dist` -> `dist\AgenteWMS-Setup-<versao>.exe`
+- Publicar no WMS: copiar para `<STORAGE_ROOT>\agente\AgenteWMS-Setup.exe`
+  no servidor do back (botao "Baixar instalador" da Gestao de impressoras).
+
+Sem o app (so o servidor, como antes): `npm start`.
+
 ## Como rodar
 
 1. Pareie o Irxon com o notebook pelo Bluetooth do Windows (Configuracoes >

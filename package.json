@@ -1,15 +1,19 @@
 {
   "name": "projetobalancanl",
+  "productName": "Agente WMS",
   "version": "1.0.0",
-  "description": "",
-  "main": "src/server.js",
+  "description": "Agente local do WMS: impressoras de etiqueta/cupom e balanca desta maquina.",
+  "main": "electron/main.js",
   "scripts": {
+    "app": "electron .",
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "ports": "node src/listPorts.js"
+    "ports": "node src/listPorts.js",
+    "icone": "node scripts/gerar-icone.js",
+    "dist": "electron-builder --win nsis"
   },
   "keywords": [],
-  "author": "",
+  "author": "NL Distribuidora - TI",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
@@ -17,16 +21,51 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "pngjs": "^7.0.0",
-    "puppeteer": "^25.9.0",
     "qrcode": "^1.5.4",
     "serialport": "^13.0.0",
     "ws": "^8.21.3"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
+    "nodemon": "^3.1.14",
+    "puppeteer": "^25.9.0"
   },
   "allowScripts": {
     "@serialport/bindings-cpp@13.0.0": true,
     "puppeteer@25.9.0": true
+  },
+  "build": {
+    "appId": "br.com.nl.agentewms",
+    "productName": "Agente WMS",
+    "copyright": "NL Distribuidora",
+    "directories": {
+      "output": "dist"
+    },
+    "npmRebuild": false,
+    "files": [
+      "electron/**",
+      "src/**",
+      "assets/**",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "src/print-raw.ps1"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.png",
+      "artifactName": "AgenteWMS-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Agente WMS",
+      "runAfterFinish": true,
+      "include": "build/installer.nsh"
+    }
   }
 }
