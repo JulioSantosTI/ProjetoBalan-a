@@ -1,18 +1,17 @@
-const { execFile } = require('child_process');
+﻿const { execFile } = require('child_process');
 const fs = require('fs/promises');
 const os = require('os');
 const path = require('path');
 const { PNG } = require('pngjs');
 const QRCode = require('qrcode');
 const { renderizarHtmlParaPng } = require('./htmlRenderer');
+const { impressoraPara } = require('./agenteConfig');
 
-const PRINTER_NAME = process.env.PRINTER_NAME || 'LABEL';
-// Segunda impressora (cupom/recibo) -- mesma logica de impressao via HTML,
-// so manda pra um nome de fila diferente. Ajuste pro nome real assim que
-// ela for instalada no Windows (confira com "Get-Printer" no PowerShell,
-// igual foi feito pra descobrir o nome "LABEL").
-const PRINTER_NAME_CUPOM = process.env.PRINTER_NAME_CUPOM || 'CUPOM';
-const PS_SCRIPT = path.join(__dirname, 'print-raw.ps1');
+// Qual impressora do Windows e a de etiqueta/cupom vem de impressorasConfig
+// (configurada pela tela do WMS e salva nesta maquina), nao mais fixa no .env.
+// No app instalado o codigo fica dentro de app.asar, que o PowerShell nao
+// consegue ler -- o .ps1 vai desempacotado ao lado (asarUnpack no package.json).
+const PS_SCRIPT = path.join(__dirname, 'print-raw.ps1').replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
 
 // Impressoras de ETIQUETA (como a POS-9250-L) normalmente falam TSPL, nao
 // ESC/POS (esse e o protocolo de impressora de RECIBO). Sao linguagens
@@ -371,7 +370,7 @@ async function imprimirHtml({ html, larguraMm, alturaMm, gapMm, limiar, qrcode, 
   await imprimirRaw(montarBitmapTspl(pngBuffer, { larguraMm: largura, alturaMm: altura, gapMm, limiar }), impressora);
 }
 
-async function imprimirRaw(bytes, nomeImpressora = PRINTER_NAME) {
+async function imprimirRaw(bytes, nomeImpressora = impressoraPara('etiqueta')) {
   const arquivoTemp = path.join(os.tmpdir(), `print-${Date.now()}-${Math.random().toString(36).slice(2)}.bin`);
   await fs.writeFile(arquivoTemp, bytes);
 
@@ -401,6 +400,4 @@ module.exports = {
   imprimirImagem,
   imprimirHtml,
   imprimirRaw,
-  PRINTER_NAME,
-  PRINTER_NAME_CUPOM,
 };

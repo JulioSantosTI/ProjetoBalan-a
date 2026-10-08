@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:"
+    />
+    <title>Agente WMS</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Bloqueio: senha master -->
+    <section id="tela-bloqueio" class="bloqueio">
+      <form id="form-senha" class="cartao-senha" autocomplete="off">
+        <div class="marca">
+          <img src="../../assets/icon.png" alt="" width="48" height="48" />
+          <div>
+            <h1>Agente WMS</h1>
+            <p>Impressoras e balança desta máquina</p>
+          </div>
+        </div>
+        <div id="campos-senha">
+          <label for="senha">Senha do agente</label>
+          <input id="senha" type="password" autofocus />
+          <label class="check mostrar-senha"><input type="checkbox" data-mostrar="senha" /> Mostrar senha</label>
+          <p id="erro-senha" class="erro" hidden>Senha incorreta.</p>
+          <button type="submit" class="botao primario">Entrar</button>
+        </div>
+        <p id="sem-senha" class="aviso" hidden>
+          A senha deste agente não foi definida. Reinstale o Agente WMS nesta máquina e defina a
+          senha na tela de instalação.
+        </p>
+      </form>
+    </section>
+
+    <!-- App -->
+    <section id="tela-app" class="app" hidden>
+      <aside class="lateral">
+        <div class="marca pequena">
+          <img src="../../assets/icon.png" alt="" width="32" height="32" />
+          <div>
+            <strong>Agente WMS</strong>
+            <span id="status-servidor" class="pilula">—</span>
+          </div>
+        </div>
+        <nav>
+          <button class="aba ativa" data-aba="impressoras">Impressoras</button>
+          <button class="aba" data-aba="balanca">Balança</button>
+          <button class="aba" data-aba="agente">Agente</button>
+        </nav>
+        <button id="bloquear" class="botao fantasma">Bloquear</button>
+      </aside>
+
+      <main>
+        <div id="aviso-servidor" class="aviso" hidden></div>
+
+        <!-- Impressoras -->
+        <section class="painel" data-painel="impressoras">
+          <header class="cabecalho">
+            <div>
+              <h2>Impressoras desta máquina</h2>
+              <p>
+                Ligue <b>Etiqueta</b> e <b>Cupom</b> na impressora que deve imprimir cada um.
+                Vale para qualquer usuário que imprimir do WMS neste computador.
+              </p>
+            </div>
+            <button id="recarregar" class="botao">Atualizar</button>
+          </header>
+
+          <div class="barra-teste">
+            <span>Tamanho da etiqueta de teste</span>
+            <input id="teste-largura" type="number" min="10" max="500" value="100" /> ×
+            <input id="teste-altura" type="number" min="10" max="500" value="50" /> mm
+            <label class="check"><input id="mostrar-virtuais" type="checkbox" /> Mostrar impressoras virtuais (PDF, Fax…)</label>
+          </div>
+
+          <ul id="lista-impressoras" class="lista"></ul>
+        </section>
+
+        <!-- Balança -->
+        <section class="painel" data-painel="balanca" hidden>
+          <header class="cabecalho">
+            <div>
+              <h2>Balança</h2>
+              <p>Porta serial (cabo, USB ou Bluetooth pareado) onde a balança está ligada.</p>
+            </div>
+          </header>
+
+          <div class="peso-cartao">
+            <span id="balanca-status" class="pilula">—</span>
+            <div id="balanca-peso" class="peso">—</div>
+            <small id="balanca-porta">—</small>
+          </div>
+
+          <div class="form-grade">
+            <label>
+              Porta
+              <select id="balanca-porta-sel"></select>
+            </label>
+            <label>
+              Velocidade (baud)
+              <select id="balanca-baud"></select>
+            </label>
+          </div>
+          <p class="dica">Salvar reinicia o agente para aplicar a nova porta.</p>
+          <button id="salvar-balanca" class="botao primario">Salvar e reiniciar</button>
+        </section>
+
+        <!-- Agente -->
+        <section class="painel" data-painel="agente" hidden>
+          <header class="cabecalho">
+            <div>
+              <h2>Agente</h2>
+              <p>O WMS se conecta a este agente em <code id="agente-url">—</code>.</p>
+            </div>
+          </header>
+
+          <div class="form-grade">
+            <label>
+              Porta do agente
+              <input id="agente-porta" type="number" min="1024" max="65535" />
+            </label>
+          </div>
+          <label class="check">
+            <input id="agente-iniciar" type="checkbox" /> Iniciar automaticamente com o Windows
+          </label>
+          <p class="dica">Se trocar a porta, ajuste também o <code>VITE_AGENTE_URL</code> do WMS.</p>
+          <button id="salvar-agente" class="botao primario">Salvar</button>
+
+          <dl class="info">
+            <dt>Versão</dt><dd id="info-versao">—</dd>
+            <dt>Arquivo de configuração</dt><dd id="info-arquivo">—</dd>
+          </dl>
+
+          <div class="zona-perigo">
+            <div>
+              <strong>Sair do agente</strong>
+              <p>Esta máquina para de imprimir e de ler a balança até o agente ser aberto de novo.</p>
+            </div>
+            <button id="sair" class="botao perigo">Sair do agente</button>
+          </div>
+        </section>
+      </main>
+    </section>
+
+    <!-- Confirmação de saída -->
+    <dialog id="dialogo-sair">
+      <form id="form-sair" method="dialog">
+        <h3>Sair do agente</h3>
+        <p>Informe a senha do agente para fechá-lo.</p>
+        <input id="senha-sair" type="password" />
+        <label class="check mostrar-senha"><input type="checkbox" data-mostrar="senha-sair" /> Mostrar senha</label>
+        <p id="erro-sair" class="erro" hidden>Senha incorreta.</p>
+        <div class="acoes">
+          <button type="button" id="cancelar-sair" class="botao">Cancelar</button>
+          <button type="submit" class="botao perigo">Sair</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" hidden></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

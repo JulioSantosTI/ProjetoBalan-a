@@ -4,13 +4,17 @@ const express = require('express');
 const { WebSocketServer } = require('ws');
 const { SerialReader } = require('./serialReader');
 const { detectarPorta } = require('./autoDetect');
-const { imprimirTexto, imprimirModelo, imprimirImagem, imprimirHtml, PRINTER_NAME_CUPOM } = require('./printer');
+const { imprimirTexto, imprimirModelo, imprimirImagem, imprimirHtml } = require('./printer');
+const { obterConfig, impressoraPara, listarImpressorasWindows } = require('./agenteConfig');
 const { aquecerBrowser, fecharBrowser } = require('./htmlRenderer');
 
-const HTTP_PORT = process.env.HTTP_PORT || 3000;
-const SERIAL_PATH_CONFIG = process.env.SERIAL_PORT;
+// Porta e balanca vem da config da maquina (app Agente WMS). Mudar qualquer
+// uma delas exige reiniciar o agente -- o app faz isso sozinho ao salvar.
+const configInicial = obterConfig();
+const HTTP_PORT = configInicial.porta;
+const SERIAL_PATH_CONFIG = configInicial.balanca.porta;
 const AUTO = !SERIAL_PATH_CONFIG || SERIAL_PATH_CONFIG.toLowerCase() === 'auto';
-const BAUD_RATE = Number(process.env.BAUD_RATE) || 9600;
+const BAUD_RATE = configInicial.balanca.baudRate;
 // Tempo maximo sem receber nenhuma linha da balanca antes de considerar a
 // porta "desconectada" de verdade. Necessario porque portas COM virtuais
 // (Bluetooth SPP) abrem com sucesso mesmo sem nenhum aparelho por perto --
@@ -70,6 +74,11 @@ app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', process.env.CORS_ORIGIN || '*');
   res.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, X-API-Key');
+  // O WMS (site na internet) chama este agente em 127.0.0.1. O Chrome so
+  // libera isso se o preflight confirmar que o acesso a rede local e esperado.
+  if (req.header('Access-Control-Request-Private-Network') === 'true') {
+    res.header('Access-Control-Allow-Private-Network', 'true');
+  }
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
@@ -150,11 +159,24 @@ app.post('/imprimir/etiqueta/html', jsonImagem, exigirApiKey, limitarTaxaImpress
 // {{PESO}}), mesma logica de renderizacao.
 app.post('/imprimir/cupom/html', jsonImagem, exigirApiKey, limitarTaxaImpressao, async (req, res) => {
   try {
-    await imprimirHtml({ ...corpoComPesoAtual(req), impressora: PRINTER_NAME_CUPOM });
+    await imprimirHtml({ ...corpoComPesoAtual(req), impressora: impressoraPara('cupom') });
     res.json({ ok: true });
   } catch (err) {
     console.error('Erro ao imprimir cupom:', err.message);
     res.status(400).json({ ok: false, erro: err.message });
+  }
+});
+
+// Impressoras que o Windows desta maquina enxerga + qual delas faz etiqueta e
+// qual faz cupom. So leitura: a tela "Gestao de impressoras" do WMS mostra,
+// mas alterar e so pelo app Agente WMS (protegido pela senha master).
+app.get('/impressoras', async (req, res) => {
+  try {
+    const impressoras = await listarImpressorasWindows();
+    res.json({ ok: true, impressoras, config: obterConfig().impressoras });
+  } catch (err) {
+    console.error('Erro ao listar impressoras:', err.message);
+    res.status(500).json({ ok: false, erro: err.message });
   }
 });
 
@@ -231,22 +253,45 @@ app.post('/peso/simular/parar', jsonPequeno, exigirApiKey, (req, res) => {
   res.json({ ok: true, modoSimulado });
 });
 
-const server = app.listen(HTTP_PORT, () => {
-  console.log(`Servidor rodando em http://localhost:${HTTP_PORT}`);
-  console.log(`WebSocket disponivel em ws://localhost:${HTTP_PORT}`);
-  aquecerBrowser()
-    .then(() => console.log('Chromium pronto para impressao via HTML.'))
-    .catch((err) => console.error('Falha ao aquecer o Chromium:', err.message));
-});
+let server = null;
+let wss = null;
 
-process.on('SIGINT', async () => {
+// Sobe HTTP + WebSocket + balanca. Chamado pelo app Electron (electron/main.js)
+// ou direto via "npm start" em desenvolvimento.
+function iniciarServidor() {
+  return new Promise((resolve, reject) => {
+    server = app.listen(HTTP_PORT, () => {
+      console.log(`Servidor rodando em http://localhost:${HTTP_PORT}`);
+      console.log(`WebSocket disponivel em ws://localhost:${HTTP_PORT}`);
+      aquecerBrowser()
+        .then(() => console.log('Chromium pronto para impressao via HTML.'))
+        .catch((err) => console.error('Falha ao aquecer o Chromium:', err.message));
+      resolve();
+    });
+    server.once('error', reject);
+
+    wss = new WebSocketServer({ server });
+    wss.on('connection', (ws) => {
+      ws.send(JSON.stringify({ type: 'status', conectado, porta: portaAtual }));
+      if (ultimaLeitura) ws.send(JSON.stringify(ultimaLeitura));
+    });
+
+    conectarBalanca();
+  });
+}
+
+async function pararServidor() {
   await fecharBrowser().catch(() => {});
-  process.exit(0);
-});
+  if (server) await new Promise((resolve) => server.close(() => resolve()));
+}
 
-const wss = new WebSocketServer({ server });
+// Estado da balanca pro app mostrar (mesma info do GET /peso).
+function estadoBalanca() {
+  return { conectado, porta: portaAtual, modoSimulado, ultimaLeitura };
+}
 
 function broadcast(mensagem) {
+  if (!wss) return;
   const payload = JSON.stringify(mensagem);
   for (const client of wss.clients) {
     if (client.readyState === client.OPEN) client.send(payload);
@@ -263,11 +308,6 @@ let portaAtual = AUTO ? null : SERIAL_PATH_CONFIG;
 // tentativa que falhasse. Ativado por /peso/simular, desativado por
 // /peso/simular/parar (volta a tentar achar a balanca real de verdade).
 let modoSimulado = false;
-
-wss.on('connection', (ws) => {
-  ws.send(JSON.stringify({ type: 'status', conectado, porta: portaAtual }));
-  if (ultimaLeitura) ws.send(JSON.stringify(ultimaLeitura));
-});
 
 function agendarReconexao() {
   if (reconectando) return;
@@ -357,4 +397,16 @@ async function conectarBalanca() {
   reader.start();
 }
 
-conectarBalanca();
+module.exports = { iniciarServidor, pararServidor, estadoBalanca };
+
+// "npm start" (sem o app): sobe direto, como antes.
+if (require.main === module) {
+  iniciarServidor().catch((err) => {
+    console.error('Falha ao subir o servidor:', err.message);
+    process.exit(1);
+  });
+  process.on('SIGINT', async () => {
+    await pararServidor();
+    process.exit(0);
+  });
+}
